@@ -1,0 +1,96 @@
+// WhatsApp Bulk Sender — data model
+// docs: https://www.prisma.io/docs
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// A person you can message. `attributes` holds arbitrary CSV columns
+/// (e.g. firstName, city, orderId) used to fill template variables.
+model Contact {
+  id         String    @id @default(cuid())
+  phone      String    @unique // E.164 without '+', e.g. 14155552671
+  name       String?
+  attributes Json      @default("{}")
+  optedIn    Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  messages   Message[]
+}
+
+/// A WhatsApp message template synced from Meta. Outbound bulk
+/// messages must reference an APPROVED template.
+model Template {
+  id           String   @id @default(cuid())
+  name         String
+  language     String   @default("en_US")
+  category     String? // MARKETING | UTILITY | AUTHENTICATION
+  status       String   @default("PENDING") // APPROVED | PENDING | REJECTED
+  bodyText     String? // raw body with {{1}}, {{2}} placeholders
+  variableCount Int     @default(0)
+  syncedAt     DateTime @default(now())
+
+  @@unique([name, language])
+}
+
+enum CampaignStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  COMPLETED
+  FAILED
+}
+
+/// A bulk send: one template applied to a set of contacts.
+model Campaign {
+  id              String         @id @default(cuid())
+  name            String
+  templateName    String
+  templateLang    String         @default("en_US")
+  // Maps each template variable to a contact field, by position.
+  // e.g. ["name", "attributes.city"] fills {{1}} and {{2}}.
+  variableMapping Json           @default("[]")
+  status          CampaignStatus @default(DRAFT)
+  totalCount      Int            @default(0)
+  sentCount       Int            @default(0)
+  failedCount     Int            @default(0)
+  scheduledAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  messages        Message[]
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+/// One message to one contact within a campaign. Lifecycle status is
+/// updated by the worker (SENT) and by webhooks (DELIVERED/READ/FAILED).
+model Message {
+  id          String        @id @default(cuid())
+  campaign    Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId  String
+  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId   String
+  phone       String
+  status      MessageStatus @default(QUEUED)
+  waMessageId String?       @unique // id returned by the Cloud API
+  error       String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([campaignId])
+  @@index([status])
+}
