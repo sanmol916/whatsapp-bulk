@@ -30,5 +30,13 @@ export async function GET(
   };
   for (const g of grouped) stats[g.status] = g._count._all;
 
-  return NextResponse.json({ campaign, stats });
+  // Surface the reasons for failed messages so users can debug delivery.
+  const failures = await prisma.message.findMany({
+    where: { campaignId: campaign.id, status: "FAILED" },
+    select: { phone: true, error: true },
+    take: 25,
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return NextResponse.json({ campaign, stats, failures });
 }

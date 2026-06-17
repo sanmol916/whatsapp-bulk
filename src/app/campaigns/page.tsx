@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 
 interface Template {
   id: string;
@@ -35,6 +35,30 @@ export default function CampaignsPage() {
   const [mapping, setMapping] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // Per-campaign failure reasons, loaded on demand when a row is expanded.
+  const [failuresByCampaign, setFailuresByCampaign] = useState<
+    Record<string, { phone: string; error: string | null }[]>
+  >({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  async function toggleFailures(campaignId: string) {
+    if (expandedId === campaignId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(campaignId);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}`);
+      const data = await res.json();
+      setFailuresByCampaign((prev) => ({
+        ...prev,
+        [campaignId]: data.failures ?? [],
+      }));
+    } catch {
+      setFailuresByCampaign((prev) => ({ ...prev, [campaignId]: [] }));
+    }
+  }
 
   const selectedTemplate = useMemo(
     () => templates.find((t) => `${t.name}|${t.language}` === templateKey),
@@ -221,14 +245,54 @@ export default function CampaignsPage() {
             </thead>
             <tbody>
               {campaigns.map((c) => (
-                <tr key={c.id} className="border-t">
-                  <td className="px-5 py-2">{c.name}</td>
-                  <td className="px-5 py-2 font-mono text-xs">{c.templateName}</td>
-                  <td className="px-5 py-2">{c.status}</td>
-                  <td className="px-5 py-2">{c.sentCount}</td>
-                  <td className="px-5 py-2">{c.failedCount}</td>
-                  <td className="px-5 py-2">{c.totalCount}</td>
-                </tr>
+                <Fragment key={c.id}>
+                  <tr className="border-t">
+                    <td className="px-5 py-2">{c.name}</td>
+                    <td className="px-5 py-2 font-mono text-xs">{c.templateName}</td>
+                    <td className="px-5 py-2">{c.status}</td>
+                    <td className="px-5 py-2">{c.sentCount}</td>
+                    <td className="px-5 py-2">
+                      {c.failedCount > 0 ? (
+                        <button
+                          onClick={() => toggleFailures(c.id)}
+                          className="font-medium text-red-600 underline"
+                        >
+                          {c.failedCount} {expandedId === c.id ? "▲" : "▼"}
+                        </button>
+                      ) : (
+                        c.failedCount
+                      )}
+                    </td>
+                    <td className="px-5 py-2">{c.totalCount}</td>
+                  </tr>
+                  {expandedId === c.id && (
+                    <tr className="border-t bg-red-50">
+                      <td colSpan={6} className="px-5 py-3">
+                        <p className="mb-2 text-xs font-semibold text-red-700">
+                          Why these messages failed:
+                        </p>
+                        {failuresByCampaign[c.id] === undefined ? (
+                          <p className="text-xs text-gray-500">Loading…</p>
+                        ) : failuresByCampaign[c.id].length === 0 ? (
+                          <p className="text-xs text-gray-500">
+                            No error details recorded.
+                          </p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {failuresByCampaign[c.id].map((f, i) => (
+                              <li key={i} className="text-xs">
+                                <span className="font-mono text-gray-600">
+                                  {f.phone}
+                                </span>{" "}
+                                — <span className="text-red-700">{f.error}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {campaigns.length === 0 && (
                 <tr>
