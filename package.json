@@ -9,6 +9,8 @@
     "postinstall": "prisma generate",
     "worker": "tsx watch src/worker/index.ts",
     "worker:prod": "tsx src/worker/index.ts",
+    "seed": "tsx prisma/seed.ts",
+    "setup": "prisma db push && tsx prisma/seed.ts",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -17,15 +19,18 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
     "bullmq": "^5.34.0",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.2",
+    "jose": "^6.2.3",
     "next": "14.2.35",
     "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.17.9",
     "@types/papaparse": "^5.3.15",
     "@types/react": "^18.3.12",

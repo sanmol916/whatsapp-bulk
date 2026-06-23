@@ -15,13 +15,49 @@ import { getRedisConnection } from "../lib/redis";
 import { prisma } from "../lib/prisma";
 import { SEND_QUEUE_NAME, type SendJobData } from "../lib/queue";
 import { sendTemplateMessage, WhatsAppApiError } from "../lib/whatsapp";
+import { configFromOrg } from "../lib/wa-config";
 
 const RATE_PER_SECOND = Number(process.env.SEND_RATE_PER_SECOND ?? "20") || 20;
 const CONCURRENCY = Math.max(1, Math.min(RATE_PER_SECOND, 50));
 
+// Short-lived cache of per-org WhatsApp credentials to avoid a DB hit per job.
+const ORG_CACHE_MS = 30_000;
+const orgCache = new Map<
+  string,
+  { at: number; cfg: ReturnType<typeof configFromOrg> }
+>();
+
+async function getOrgConfig(organizationId: string) {
+  const cached = orgCache.get(organizationId);
+  if (cached && Date.now() - cached.at < ORG_CACHE_MS) return cached.cfg;
+
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      waApiVersion: true,
+      waPhoneNumberId: true,
+      waBusinessId: true,
+      waAccessToken: true,
+    },
+  });
+  if (!org) {
+    throw new WhatsAppApiError("Organization not found for job", 400, null);
+  }
+  const cfg = configFromOrg(org);
+  orgCache.set(organizationId, { at: Date.now(), cfg });
+  return cfg;
+}
+
 async function processJob(job: Job<SendJobData>) {
-  const { messageId, campaignId, to, templateName, languageCode, bodyParams } =
-    job.data;
+  const {
+    organizationId,
+    messageId,
+    campaignId,
+    to,
+    templateName,
+    languageCode,
+    bodyParams,
+  } = job.data;
 
   // Mark campaign as actively sending on first dispatch.
   await prisma.campaign.updateMany({
@@ -29,7 +65,8 @@ async function processJob(job: Job<SendJobData>) {
     data: { status: "SENDING" },
   });
 
-  const result = await sendTemplateMessage({
+  const cfg = await getOrgConfig(organizationId);
+  const result = await sendTemplateMessage(cfg, {
     to,
     templateName,
     languageCode,

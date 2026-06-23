@@ -1,4 +1,4 @@
-// WhatsApp Bulk Sender — data model
+// WhatsApp Bulk Sender — multi-tenant SaaS data model
 // docs: https://www.prisma.io/docs
 
 generator client {
@@ -10,32 +10,86 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// A tenant = one business account on the platform. Owns its own users,
+/// contacts, templates, campaigns and WhatsApp credentials. Plan limits
+/// control how much it can send.
+model Organization {
+  id   String @id @default(cuid())
+  name String
+
+  // Plan & usage limits. A limit of -1 means "unlimited".
+  plan         String   @default("FREE") // FREE | STARTER | PRO | BUSINESS | UNLIMITED
+  messageLimit Int      @default(100) // monthly message cap
+  contactLimit Int      @default(100) // max stored contacts
+  messagesUsed Int      @default(0) // resets monthly
+  usageResetAt DateTime @default(now())
+  active       Boolean  @default(true)
+
+  // Per-tenant WhatsApp Cloud API credentials (the business connects its own number).
+  waApiVersion    String  @default("v21.0")
+  waPhoneNumberId String?
+  waBusinessId    String?
+  waAccessToken   String? // stored encrypted at rest
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  contacts  Contact[]
+  templates Template[]
+  campaigns Campaign[]
+  messages  Message[]
+}
+
+/// A login. Belongs to exactly one organization. ADMIN users (platform owner)
+/// can manage all organizations.
+model User {
+  id             String       @id @default(cuid())
+  username       String       @unique
+  passwordHash   String
+  role           String       @default("USER") // ADMIN | USER
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+}
+
 /// A person you can message. `attributes` holds arbitrary CSV columns
 /// (e.g. firstName, city, orderId) used to fill template variables.
 model Contact {
-  id         String    @id @default(cuid())
-  phone      String    @unique // E.164 without '+', e.g. 14155552671
-  name       String?
-  attributes Json      @default("{}")
-  optedIn    Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  messages   Message[]
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  phone          String // E.164 without '+', e.g. 14155552671
+  name           String?
+  attributes     Json         @default("{}")
+  optedIn        Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  messages       Message[]
+
+  @@unique([organizationId, phone])
+  @@index([organizationId])
 }
 
 /// A WhatsApp message template synced from Meta. Outbound bulk
 /// messages must reference an APPROVED template.
 model Template {
-  id           String   @id @default(cuid())
-  name         String
-  language     String   @default("en_US")
-  category     String? // MARKETING | UTILITY | AUTHENTICATION
-  status       String   @default("PENDING") // APPROVED | PENDING | REJECTED
-  bodyText     String? // raw body with {{1}}, {{2}} placeholders
-  variableCount Int     @default(0)
-  syncedAt     DateTime @default(now())
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  language       String       @default("en_US")
+  category       String? // MARKETING | UTILITY | AUTHENTICATION
+  status         String       @default("PENDING") // APPROVED | PENDING | REJECTED
+  bodyText       String? // raw body with {{1}}, {{2}} placeholders
+  variableCount  Int          @default(0)
+  syncedAt       DateTime     @default(now())
 
-  @@unique([name, language])
+  @@unique([organizationId, name, language])
+  @@index([organizationId])
 }
 
 enum CampaignStatus {
@@ -49,6 +103,8 @@ enum CampaignStatus {
 /// A bulk send: one template applied to a set of contacts.
 model Campaign {
   id              String         @id @default(cuid())
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name            String
   templateName    String
   templateLang    String         @default("en_US")
@@ -63,6 +119,8 @@ model Campaign {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   messages        Message[]
+
+  @@index([organizationId])
 }
 
 enum MessageStatus {
@@ -76,21 +134,24 @@ enum MessageStatus {
 /// One message to one contact within a campaign. Lifecycle status is
 /// updated by the worker (SENT) and by webhooks (DELIVERED/READ/FAILED).
 model Message {
-  id          String        @id @default(cuid())
-  campaign    Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  campaignId  String
-  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  contactId   String
-  phone       String
-  status      MessageStatus @default(QUEUED)
-  waMessageId String?       @unique // id returned by the Cloud API
-  error       String?
-  sentAt      DateTime?
-  deliveredAt DateTime?
-  readAt      DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign       Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId     String
+  contact        Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId      String
+  phone          String
+  status         MessageStatus @default(QUEUED)
+  waMessageId    String?       @unique // id returned by the Cloud API
+  error          String?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
+  @@index([organizationId])
   @@index([campaignId])
   @@index([status])
 }

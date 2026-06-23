@@ -5,6 +5,7 @@ export const SEND_QUEUE_NAME = "wa-send";
 
 /** Payload for a single outbound message job. */
 export interface SendJobData {
+  organizationId: string;
   messageId: string;
   campaignId: string;
   to: string;

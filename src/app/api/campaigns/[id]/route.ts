@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +9,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: params.id },
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const campaign = await prisma.campaign.findFirst({
+    where: { id: params.id, organizationId: session.organizationId },
   });
   if (!campaign) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

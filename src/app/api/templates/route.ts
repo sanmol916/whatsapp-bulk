@@ -5,12 +5,18 @@ import {
   countTemplateVariables,
   WhatsAppApiError,
 } from "@/lib/whatsapp";
+import { configFromOrg } from "@/lib/wa-config";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/templates — list templates stored locally
+// GET /api/templates — list this org's templates
 export async function GET() {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const templates = await prisma.template.findMany({
+    where: { organizationId: session.organizationId },
     orderBy: { name: "asc" },
   });
   return NextResponse.json({ templates });
@@ -18,8 +24,22 @@ export async function GET() {
 
 // POST /api/templates — pull latest templates from Meta and upsert locally
 export async function POST() {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const org = await prisma.organization.findUnique({
+    where: { id: session.organizationId },
+    select: {
+      waApiVersion: true,
+      waPhoneNumberId: true,
+      waBusinessId: true,
+      waAccessToken: true,
+    },
+  });
+  if (!org) return NextResponse.json({ error: "Org not found" }, { status: 400 });
+
   try {
-    const remote = await listTemplates();
+    const remote = await listTemplates(configFromOrg(org));
     let synced = 0;
 
     for (const t of remote) {
@@ -27,8 +47,15 @@ export async function POST() {
       const bodyText = bodyComponent?.text ?? null;
 
       await prisma.template.upsert({
-        where: { name_language: { name: t.name, language: t.language } },
+        where: {
+          organizationId_name_language: {
+            organizationId: session.organizationId,
+            name: t.name,
+            language: t.language,
+          },
+        },
         create: {
+          organizationId: session.organizationId,
           name: t.name,
           language: t.language,
           category: t.category ?? null,

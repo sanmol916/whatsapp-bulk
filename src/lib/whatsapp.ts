@@ -1,14 +1,16 @@
 /**
  * Thin wrapper around the WhatsApp Cloud API (Meta Graph API).
+ * Multi-tenant: every call takes the calling organization's credentials,
+ * so each business sends from its own connected number.
  * Docs: https://developers.facebook.com/docs/whatsapp/cloud-api
  */
 
-const API_VERSION = process.env.WHATSAPP_API_VERSION ?? "v21.0";
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID ?? "";
-const WABA_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? "";
-const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN ?? "";
-
-const GRAPH_BASE = `https://graph.facebook.com/${API_VERSION}`;
+export interface WhatsAppConfig {
+  apiVersion: string;
+  phoneNumberId: string;
+  businessId: string;
+  accessToken: string;
+}
 
 export class WhatsAppApiError extends Error {
   status: number;
@@ -21,17 +23,26 @@ export class WhatsAppApiError extends Error {
   }
 }
 
+function graphBase(cfg: WhatsAppConfig) {
+  return `https://graph.facebook.com/${cfg.apiVersion || "v21.0"}`;
+}
+
 async function graphRequest<T>(
+  cfg: WhatsAppConfig,
   path: string,
   init: RequestInit & { method: "GET" | "POST" }
 ): Promise<T> {
-  if (!ACCESS_TOKEN) {
-    throw new WhatsAppApiError("WHATSAPP_ACCESS_TOKEN is not configured", 500, null);
+  if (!cfg.accessToken) {
+    throw new WhatsAppApiError(
+      "WhatsApp is not connected. Add your access token in Settings.",
+      400,
+      null
+    );
   }
-  const res = await fetch(`${GRAPH_BASE}/${path}`, {
+  const res = await fetch(`${graphBase(cfg)}/${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      Authorization: `Bearer ${cfg.accessToken}`,
       "Content-Type": "application/json",
       ...(init.headers ?? {}),
     },
@@ -63,12 +74,15 @@ export interface SendTemplateResult {
  * Send an approved template message. `bodyParams` fill {{1}}, {{2}}, ...
  * in the template's BODY component, in order.
  */
-export async function sendTemplateMessage(params: {
-  to: string;
-  templateName: string;
-  languageCode: string;
-  bodyParams?: string[];
-}): Promise<SendTemplateResult> {
+export async function sendTemplateMessage(
+  cfg: WhatsAppConfig,
+  params: {
+    to: string;
+    templateName: string;
+    languageCode: string;
+    bodyParams?: string[];
+  }
+): Promise<SendTemplateResult> {
   const { to, templateName, languageCode, bodyParams = [] } = params;
 
   const components =
@@ -84,7 +98,7 @@ export async function sendTemplateMessage(params: {
         ]
       : undefined;
 
-  return graphRequest<SendTemplateResult>(`${PHONE_NUMBER_ID}/messages`, {
+  return graphRequest<SendTemplateResult>(cfg, `${cfg.phoneNumberId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -103,11 +117,11 @@ export async function sendTemplateMessage(params: {
  * Send a free-form text message. Only allowed within the 24h customer
  * service window (i.e. after the user messaged you).
  */
-export async function sendTextMessage(params: {
-  to: string;
-  text: string;
-}): Promise<SendTemplateResult> {
-  return graphRequest<SendTemplateResult>(`${PHONE_NUMBER_ID}/messages`, {
+export async function sendTextMessage(
+  cfg: WhatsAppConfig,
+  params: { to: string; text: string }
+): Promise<SendTemplateResult> {
+  return graphRequest<SendTemplateResult>(cfg, `${cfg.phoneNumberId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -135,16 +149,19 @@ interface ListTemplatesResponse {
 }
 
 /** Fetch all message templates defined on the WhatsApp Business Account. */
-export async function listTemplates(): Promise<MetaTemplate[]> {
-  if (!WABA_ID) {
+export async function listTemplates(
+  cfg: WhatsAppConfig
+): Promise<MetaTemplate[]> {
+  if (!cfg.businessId) {
     throw new WhatsAppApiError(
-      "WHATSAPP_BUSINESS_ACCOUNT_ID is not configured",
-      500,
+      "WhatsApp Business Account ID is not set. Add it in Settings.",
+      400,
       null
     );
   }
   const res = await graphRequest<ListTemplatesResponse>(
-    `${WABA_ID}/message_templates?limit=100`,
+    cfg,
+    `${cfg.businessId}/message_templates?limit=100`,
     { method: "GET" }
   );
   return res.data ?? [];
@@ -157,8 +174,4 @@ export function countTemplateVariables(bodyText: string | undefined): number {
   if (!matches) return 0;
   const nums = matches.map((m) => parseInt(m.replace(/[^\d]/g, ""), 10));
   return Math.max(0, ...nums);
-}
-
-export function isWhatsAppConfigured(): boolean {
-  return Boolean(PHONE_NUMBER_ID && ACCESS_TOKEN);
 }

@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {
-  title: "WhatsApp Bulk Sender",
-  description: "Send bulk WhatsApp template messages via the Cloud API",
+  title: "WA Sender — WhatsApp Business Platform",
+  description: "Send bulk WhatsApp campaigns, manage contacts and templates.",
 };
 
 export default function RootLayout({
@@ -14,10 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <Nav />
-        <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

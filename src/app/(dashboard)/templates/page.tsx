@@ -15,11 +15,11 @@ interface Template {
 function StatusBadge({ status }: { status: string }) {
   const color =
     status === "APPROVED"
-      ? "bg-green-100 text-green-700"
+      ? "bg-brand-50 text-brand-dark"
       : status === "REJECTED"
         ? "bg-red-100 text-red-700"
         : "bg-amber-100 text-amber-700";
-  return <span className={`rounded px-2 py-0.5 text-xs ${color}`}>{status}</span>;
+  return <span className={`badge ${color}`}>{status}</span>;
 }
 
 export default function TemplatesPage() {
@@ -60,11 +60,7 @@ export default function TemplatesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Templates</h1>
-        <button
-          onClick={sync}
-          disabled={syncing}
-          className="rounded bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-50"
-        >
+        <button onClick={sync} disabled={syncing} className="btn-primary">
           {syncing ? "Syncing…" : "Sync from Meta"}
         </button>
       </div>
@@ -79,16 +75,16 @@ export default function TemplatesPage() {
         >
           WhatsApp Manager
         </a>
-        . Click <em>Sync</em> to pull the latest list and approval status here.
+        . Click <em>Sync</em> to pull the latest list and approval status.
       </p>
 
       {message && <p className="text-sm text-brand-dark">{message}</p>}
 
       <div className="grid gap-4 md:grid-cols-2">
         {templates.map((t) => (
-          <div key={t.id} className="rounded-lg border bg-white p-4">
+          <div key={t.id} className="card p-4">
             <div className="flex items-center justify-between">
-              <div className="font-medium">{t.name}</div>
+              <div className="font-semibold">{t.name}</div>
               <StatusBadge status={t.status} />
             </div>
             <div className="mt-1 text-xs text-gray-500">
@@ -96,14 +92,14 @@ export default function TemplatesPage() {
               {t.variableCount === 1 ? "" : "s"}
             </div>
             {t.bodyText && (
-              <p className="mt-3 whitespace-pre-wrap rounded bg-gray-50 p-3 text-sm text-gray-700">
+              <p className="mt-3 whitespace-pre-wrap rounded-lg bg-brand-light/40 p-3 text-sm text-gray-700">
                 {t.bodyText}
               </p>
             )}
           </div>
         ))}
         {templates.length === 0 && (
-          <div className="rounded-lg border bg-white p-6 text-center text-gray-400">
+          <div className="card p-8 text-center text-gray-400">
             No templates yet. Click <em>Sync from Meta</em>.
           </div>
         )}
