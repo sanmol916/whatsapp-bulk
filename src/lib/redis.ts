@@ -8,11 +8,14 @@
  */
 export function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL ?? "redis://localhost:6379");
+  const isTls = url.protocol === "rediss:";
   return {
     host: url.hostname,
     port: url.port ? Number(url.port) : 6379,
     username: url.username || undefined,
     password: url.password || undefined,
     maxRetriesPerRequest: null,
+    // Managed Redis providers (Upstash etc.) require TLS via rediss://.
+    ...(isTls ? { tls: {} } : {}),
   };
 }
